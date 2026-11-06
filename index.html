@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Sistema de Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Custom scrollbar for better look */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .panel-card {
+            background-color: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white p-4 shadow-md">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold tracking-tight">Simulador de Control PID Lazo Cerrado</h1>
+            <div class="text-sm bg-slate-800 px-3 py-1 rounded-full text-slate-300">
+                dt = 0.02s
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
+        
+        <!-- Left Column: Chart and Variables (Takes up 2 cols on large screens) -->
+        <div class="lg:col-span-2 flex flex-col gap-6">
+            
+            <!-- Chart Panel -->
+            <div class="panel-card flex-grow flex flex-col relative h-[450px]">
+                <h2 class="text-lg font-semibold mb-2 border-b pb-2">Visualización en Tiempo Real</h2>
+                <div class="flex-grow relative w-full h-full">
+                    <canvas id="simulationChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Real-time Variables State -->
+            <div class="panel-card">
+                <h2 class="text-lg font-semibold mb-4 border-b pb-2">Estado de Variables</h2>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div class="bg-slate-50 p-3 rounded border text-center">
+                        <div class="text-xs text-slate-500 font-bold uppercase">Error (e)</div>
+                        <div class="text-lg font-mono" id="var-e">0.000</div>
+                    </div>
+                    <div class="bg-slate-50 p-3 rounded border text-center">
+                        <div class="text-xs text-slate-500 font-bold uppercase">Señal Control (u)</div>
+                        <div class="text-lg font-mono" id="var-u">0.000</div>
+                    </div>
+                    <div class="bg-slate-50 p-3 rounded border text-center">
+                        <div class="text-xs text-slate-500 font-bold uppercase">Salida Actuador (ua)</div>
+                        <div class="text-lg font-mono" id="var-ua">0.000</div>
+                    </div>
+                    <div class="bg-slate-50 p-3 rounded border text-center">
+                        <div class="text-xs text-slate-500 font-bold uppercase">Entrada Planta (ue)</div>
+                        <div class="text-lg font-mono" id="var-ue">0.000</div>
+                    </div>
+                    <div class="bg-indigo-50 p-3 rounded border border-indigo-100 text-center">
+                        <div class="text-xs text-indigo-500 font-bold uppercase">Salida Real (θo)</div>
+                        <div class="text-lg font-mono text-indigo-700 font-semibold" id="var-theta">0.000</div>
+                    </div>
+                    <div class="bg-red-50 p-3 rounded border border-red-100 text-center">
+                        <div class="text-xs text-red-500 font-bold uppercase">Perturbación (d)</div>
+                        <div class="text-lg font-mono text-red-600" id="var-d">0.000</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Controls and Parameters -->
+        <div class="flex flex-col gap-4">
+            
+            <!-- Execution Controls -->
+            <div class="panel-card bg-slate-800 text-white">
+                <h2 class="text-lg font-semibold mb-4 text-slate-200">Control de Ejecución</h2>
+                <div class="flex gap-2">
+                    <button id="btnPlayPause" class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded transition-colors" onclick="toggleSimulation()">
+                        Play
+                    </button>
+                    <button class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded transition-colors" onclick="resetSimulation()">
+                        Reiniciar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Entradas del Sistema -->
+            <div class="panel-card border-t-4 border-blue-500">
+                <h2 class="text-lg font-semibold mb-4 border-b pb-2">Entradas al Sistema</h2>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Referencia (Setpoint)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="range" id="param-ref" min="-50" max="50" step="1" value="10" class="flex-grow accent-blue-600" oninput="updateInputValue('ref')">
+                        <input type="number" id="num-ref" value="10" class="w-20 border-slate-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-1" onchange="updateSliderValue('ref')">
+                    </div>
+                </div>
+
+                <div class="bg-red-50 p-3 rounded-md border border-red-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-bold text-red-700">Activar Perturbación</label>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="param-distToggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                        </label>
+                    </div>
+                    <label class="block text-xs font-medium text-red-600 mb-1">Valor de Perturbación (Pulso)</label>
+                    <input type="number" id="param-distVal" value="5" step="0.5" class="w-full border-red-300 rounded-md shadow-sm focus:border-red-500 focus:ring-red-500 border p-1 bg-white text-sm">
+                </div>
+            </div>
+
+            <!-- Parámetros Controlador -->
+            <div class="panel-card border-t-4 border-indigo-500">
+                <h2 class="text-lg font-semibold mb-4 border-b pb-2">Controlador (PID)</h2>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Kp (Proporcional)</label>
+                        <input type="number" id="param-Kp" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Ki (Integral)</label>
+                        <input type="number" id="param-Ki" value="0.1" step="0.01" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Kd (Derivativo)</label>
+                        <input type="number" id="param-Kd" value="0.01" step="0.01" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parámetros Planta y Actuador -->
+            <div class="panel-card border-t-4 border-green-500">
+                <h2 class="text-lg font-semibold mb-4 border-b pb-2">Planta & Actuador</h2>
+                <div class="grid grid-cols-1 gap-4 mb-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Ganancia Actuador (Ka)</label>
+                        <input type="number" id="param-Ka" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm">
+                    </div>
+                </div>
+                <div class="bg-slate-50 p-2 rounded border">
+                    <label class="block text-xs font-medium text-slate-700 mb-1">Ganancia Planta (K)</label>
+                    <input type="number" id="param-K" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm">
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // La interfaz permanece en el navegador; los cálculos PID y de planta
+        // se ejecutan en Python (backend Flask).
+        let isRunning = false;
+        let simInterval = null;
+        const dt = 0.02;
+        const maxDataPoints = 150;
+        let chartInstance = null;
+
+        function initChart() {
+            const ctx = document.getElementById('simulationChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Referencia', data: [], borderColor: '#3b82f6',
+                            borderWidth: 2, borderDash: [5, 5], pointRadius: 0, tension: 0.1
+                        },
+                        {
+                            label: 'Salida (θo)', data: [], borderColor: '#10b981',
+                            borderWidth: 3, pointRadius: 0, tension: 0.1
+                        },
+                        {
+                            label: 'Perturbación (d)', data: [], borderColor: '#ef4444',
+                            borderWidth: 1.5, pointRadius: 0, tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Tiempo (s)' },
+                            grid: { color: '#f1f5f9' },
+                            ticks: { maxTicksLimit: 10, callback: function(value) {
+                                return Number(this.getLabelForValue(value)).toFixed(1);
+                            }}
+                        },
+                        y: { title: { display: true, text: 'Magnitud' }, grid: { color: '#f1f5f9' } }
+                    },
+                    plugins: { legend: { position: 'top' } }
+                }
+            });
+        }
+
+        function updateInputValue(id) {
+            document.getElementById('num-' + id).value =
+                document.getElementById('param-' + id).value;
+        }
+
+        function updateSliderValue(id) {
+            document.getElementById('param-' + id).value =
+                document.getElementById('num-' + id).value;
+        }
+
+        function getParams() {
+            return {
+                ref: parseFloat(document.getElementById('param-ref').value),
+                distOn: document.getElementById('param-distToggle').checked,
+                distVal: parseFloat(document.getElementById('param-distVal').value),
+                Kp: parseFloat(document.getElementById('param-Kp').value),
+                Ki: parseFloat(document.getElementById('param-Ki').value),
+                Kd: parseFloat(document.getElementById('param-Kd').value),
+                Ka: parseFloat(document.getElementById('param-Ka').value),
+                K: parseFloat(document.getElementById('param-K').value)
+            };
+        }
+
+        async function simulateStep() {
+            if (!isRunning) return;
+            try {
+                const response = await fetch('/api/step', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(getParams())
+                });
+                if (!response.ok) throw new Error('Error del servidor Python');
+                const v = await response.json();
+
+                updateVariablesUI(v.e, v.u, v.ua, v.ue, v.theta, v.d);
+                chartInstance.data.labels.push(v.time);
+                chartInstance.data.datasets[0].data.push(v.ref);
+                chartInstance.data.datasets[1].data.push(v.theta);
+                chartInstance.data.datasets[2].data.push(v.d);
+
+                if (chartInstance.data.labels.length > maxDataPoints) {
+                    chartInstance.data.labels.shift();
+                    chartInstance.data.datasets.forEach(ds => ds.data.shift());
+                }
+                chartInstance.update('none');
+            } catch (error) {
+                console.error(error);
+                pauseSimulation();
+                alert('No se pudo conectar con el simulador Python. Verificá que app.py esté ejecutándose.');
+            }
+        }
+
+        function updateVariablesUI(e, u, ua, ue, theta, d) {
+            document.getElementById('var-e').innerText = Number(e).toFixed(3);
+            document.getElementById('var-u').innerText = Number(u).toFixed(3);
+            document.getElementById('var-ua').innerText = Number(ua).toFixed(3);
+            document.getElementById('var-ue').innerText = Number(ue).toFixed(3);
+            document.getElementById('var-theta').innerText = Number(theta).toFixed(3);
+            document.getElementById('var-d').innerText = Number(d).toFixed(3);
+        }
+
+        async function simulationLoop() {
+            if (!isRunning) return;
+            await simulateStep();
+            if (isRunning) simInterval = setTimeout(simulationLoop, dt * 1000);
+        }
+
+        function pauseSimulation() {
+            isRunning = false;
+            if (simInterval) {
+                clearTimeout(simInterval);
+                simInterval = null;
+            }
+            const btn = document.getElementById('btnPlayPause');
+            btn.innerText = 'Play';
+            btn.classList.remove('bg-yellow-500', 'hover:bg-yellow-400');
+            btn.classList.add('bg-green-600', 'hover:bg-green-500');
+        }
+
+        function toggleSimulation() {
+            const btn = document.getElementById('btnPlayPause');
+            if (isRunning) {
+                pauseSimulation();
+            } else {
+                isRunning = true;
+                btn.innerText = 'Pausa';
+                btn.classList.remove('bg-green-600', 'hover:bg-green-500');
+                btn.classList.add('bg-yellow-500', 'hover:bg-yellow-400');
+                simulationLoop();
+            }
+        }
+
+        async function resetSimulation() {
+            pauseSimulation();
+            try {
+                await fetch('/api/reset', { method: 'POST' });
+                chartInstance.data.labels = [];
+                chartInstance.data.datasets.forEach(ds => ds.data = []);
+                chartInstance.update();
+                updateVariablesUI(0, 0, 0, 0, 0, 0);
+            } catch (error) {
+                alert('No se pudo reiniciar el simulador Python.');
+            }
+        }
+
+        window.onload = () => {
+            initChart();
+            updateVariablesUI(0, 0, 0, 0, 0, 0);
+        };
+    </script>
+</body>
+</html>
