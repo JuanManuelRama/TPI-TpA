@@ -1,158 +1,214 @@
-from __future__ import annotations
-
 from threading import Lock
-from pathlib import Path
-
-from flask import Flask, jsonify, request, send_from_directory
-from scipy import signal
+from flask import Flask, jsonify, request, send_file
+import control as ct
 import numpy as np
 
-BASE_DIR = Path(__file__).resolve().parent
+
+class Params:
+    
+    """Parameters for the PID controller."""
+    
+    def __init__(self, ref: float, Kp: float, Ki: float, Kd: float, Ka: float, Kpl: float, T: float, dist: float):
+        self.ref = ref
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+        self.Ka = Ka
+        self.Kpl = Kpl
+        self.Plant = ct.ss(ct.tf([Kpl], [T, 1.0]))
+        self.dist = dist
+
+    @staticmethod
+    def default():
+        """Return default parameters."""
+        return Params(
+            ref=10.0,
+            Kp=1.0,
+            Ki=0.5,
+            Kd=0.01,
+            Ka=1.0,
+            Kpl=1.0,
+            T = 1,
+            dist = 5.0,
+        )
+    
+class State:
+    """State of the PID controller and continuous plant."""
+    
+    def __init__(self, time: float, theta: float, integral: float, previous_error: float, previous_theta: float, plant_x: np.ndarray, disturbance_on: bool):
+        self.time = time
+        self.theta = theta
+        self.integral = integral
+        self.previous_error = previous_error
+        self.previous_theta = previous_theta
+        self.plant_x = plant_x
+        self.disturbance_on = disturbance_on
+    
+    @staticmethod
+    def default(params: Params):
+        """Return default state."""
+        return State(
+            time=0.0,
+            theta=0.0,
+            integral=0.0,
+            previous_error=0.0,
+            previous_theta=0.0,
+            plant_x=np.zeros(params.Plant.nstates, dtype=float),
+            disturbance_on=False,
+        )
+
 app = Flask(__name__)
-DT = 0.02  # 20 ms, igual que en la interfaz
+
+
 _lock = Lock()
 
-# Estado de una única sesión local del simulador.
-_state = {
-    "time": 0.0,
-    "theta": 0.0,
-    "integral": 0.0,
-    "previous_error": 0.0,
-    "previous_theta": 0.0,
-    "plant_x": np.zeros(1, dtype=float),
-    "plant_key": None,
-}
+DT = 0.02  # Simulation step: 20 ms
+_params = Params.default()
+_state = State.default(_params)
 
 
-def reset_state():
+def reset_simulation():
+    """Reset all simulation variables."""
+
     global _state
-    _state = {
-        "time": 0.0,
-        "theta": 0.0,
-        "integral": 0.0,
-        "previous_error": 0.0,
-        "previous_theta": 0.0,
-        "plant_x": np.zeros(1, dtype=float),
-        "plant_key": None,
+    _state = State.default(_params)
+
+
+def advance_simulation():
+    """Advance the PID controller and continuous plant by one DT."""
+
+    ref = _params.ref
+    kp = _params.Kp
+    ki = _params.Ki
+    kd = _params.Kd
+    ka = _params.Ka
+    dist_value = _params.dist
+
+    # Current plant output
+    theta = _state.theta
+
+    # Calculate error
+    error = ref - theta
+
+
+    # Integral term (trapezoidal integration formula)
+    integral = _state.integral + 0.5 * (error + _state.previous_error) * DT
+
+    # Derivative on measurement
+    derivative = (error - _state.previous_error) / DT
+
+    # PID output
+    control_output = error * kp + integral * ki + derivative * kd
+
+    # Actuator output
+    actuator_output = ka * control_output
+
+    # Disturbance
+    disturbance = dist_value if _state.disturbance_on else 0.0
+
+    plant_input = actuator_output + disturbance
+
+    # Integrate the continuous-time plant over one time step.
+    time_points = np.array([0.0, DT])
+
+    inputs = np.array([[plant_input, plant_input]] ,dtype=np.float64)
+
+
+    response = ct.forced_response(
+        _params.Plant,
+        time_points,
+        inputs=inputs,
+        initial_state=_state.plant_x,
+        return_states=True
+    )
+
+    # Save the new plant state
+    _state.plant_x = np.asarray(
+        response.states[:, -1],
+        dtype=float
+    ).flatten()
+
+    # New plant output
+    theta_next = float(
+        np.asarray(response.outputs).reshape(-1)[-1]
+    )
+
+    # Update simulation memory
+    _state.theta = theta_next
+    _state.integral = integral
+    _state.previous_error = error
+    _state.previous_theta = theta
+
+    _state.time += DT
+
+    # Return simulation data
+    return {
+        "time": _state.time,
+        "ref": ref,
+        "e": error,
+        "p": error * kp,
+        "i": integral * ki,
+        "d_pid": derivative * kd,
+        "u": control_output,
+        "ua": actuator_output,
+        "ue": plant_input,
+        "theta": theta_next,
+        "d": disturbance,
     }
-
-
-def finite_number(data, key, default):
-    value = float(data.get(key, default))
-    if not np.isfinite(value):
-        raise ValueError(f"El parámetro {key} debe ser un número finito.")
-    return value
-
-
-def plant_discretization(kpl: float, tau: float):
-    """
-    Discretiza G(s) = Kpl / (T*s + 1) con retención de orden cero.
-    scipy.signal.cont2discrete devuelve (Ad, Bd, Cd, Dd, dt).
-    """
-    numerator = [kpl]
-    denominator = [tau, 1.0]
-    a, b, c, d = signal.tf2ss(numerator, denominator)
-    return signal.cont2discrete((a, b, c, d), DT, method="zoh")
 
 
 @app.get("/")
 def index():
-    return send_from_directory(BASE_DIR, "index.html")
+    return send_file("index.html")
 
 
-@app.post("/api/reset")
-def api_reset():
+@app.post("/post/step")
+def post_step():
+    """Advance the simulation by one step."""
+
     with _lock:
-        reset_state()
-    return jsonify({"ok": True})
+        result = advance_simulation()
+
+    return jsonify(result)
 
 
-@app.post("/api/step")
-def api_step():
-    try:
-        data = request.get_json(force=True)
-        ref = finite_number(data, "ref", 10.0)
-        dist_on = bool(data.get("distOn", False))
-        dist_val = finite_number(data, "distVal", 5.0)
-        kp = finite_number(data, "Kp", 1.0)
-        ki = finite_number(data, "Ki", 0.1)
-        kd = finite_number(data, "Kd", 0.01)
-        ka = finite_number(data, "Ka", 1.0)
-        kpl = finite_number(data, "Kpl", 1.0)
-        tau = max(finite_number(data, "T", 1.0), 0.001)
-        disturbance = dist_val if dist_on else 0.0
+@app.post("/post/dist")
+def post_dist():
+    """Activate or deactivate the disturbance."""
+    with _lock:
+        _state.disturbance_on = not _state.disturbance_on
+    return "", 204
 
-        with _lock:
-            # Recalcular la representación discreta si cambian Kpl o T.
-            plant_key = (kpl, tau)
-            if _state["plant_key"] != plant_key:
-                ad, bd, cd, dd, _ = plant_discretization(kpl, tau)
-                _state["plant_x"] = np.zeros(ad.shape[0], dtype=float)
-                _state["plant_key"] = plant_key
-                _state["plant_ad"] = ad
-                _state["plant_bd"] = bd
-                _state["plant_cd"] = cd
-                _state["plant_dd"] = dd
 
-            theta = float(_state["theta"])
-            error = ref - theta
+@app.patch("/post/params")
+def patch_params():
+    """Update parameters and reset simulation."""
 
-            # PID paralelo PI-D: derivada sobre la medición para evitar
-            # el "derivative kick" cuando cambia bruscamente el setpoint.
-            # Integral trapezoidal: mejora la aproximación respecto de Euler
-            # hacia adelante y evita que Ki se comporte como una ganancia P.
-            integral_candidate = (
-                _state["integral"]
-                + ki * 0.5 * (error + _state["previous_error"]) * DT
-            )
-            integral_candidate = float(np.clip(integral_candidate, -500.0, 500.0))
+    global _params
 
-            derivative_measurement = (theta - _state["previous_theta"]) / DT
-            p_term = kp * error
-            i_term = integral_candidate
-            d_term = -kd * derivative_measurement
-            control = p_term + i_term + d_term
+    with _lock:
+        _params = Params(**request.json)
+        reset_simulation()
 
-            actuator_output = ka * control
-            plant_input = actuator_output + disturbance
+        return "", 204
 
-            # Planta discreta obtenida desde scipy.signal.cont2discrete.
-            # Forma de estado: x[k+1]=Ad*x[k]+Bd*u[k], y[k]=Cd*x[k]+Dd*u[k].
-            ad = _state["plant_ad"]
-            bd = _state["plant_bd"]
-            cd = _state["plant_cd"]
-            dd = _state["plant_dd"]
-            plant_x = _state["plant_x"]
-            theta_next = float((cd @ plant_x + dd * plant_input).squeeze())
-            plant_x_next = (ad @ plant_x + bd.flatten() * plant_input).astype(float)
+@app.post("/post/reset")
+def post_reset():
+    """Reset the simulation and return its parameters."""
 
-            # Actualizar memoria para la próxima muestra.
-            _state["plant_x"] = plant_x_next
-            _state["theta"] = theta_next
-            _state["integral"] = integral_candidate
-            _state["previous_error"] = error
-            _state["previous_theta"] = theta
-            _state["time"] += DT
+    with _lock:
+        reset_simulation()
 
-            return jsonify({
-                "time": round(_state["time"], 8),
-                "ref": ref,
-                "e": error,
-                "p": p_term,
-                "i": i_term,
-                "d_pid": d_term,
-                "u": control,
-                "ua": actuator_output,
-                "ue": plant_input,
-                "theta": theta_next,
-                "d": disturbance,
-            })
-
-    except (ValueError, TypeError, KeyError) as exc:
-        return jsonify({"error": str(exc)}), 400
+    return "", 204
 
 
 if __name__ == "__main__":
-    reset_state()
-    print("Simulador PID disponible en http://127.0.0.1:5000")
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    reset_simulation()
+
+    print("PID simulator running at http://127.0.0.1:5000")
+
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        debug=False
+    )
