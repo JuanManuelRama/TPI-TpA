@@ -7,12 +7,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* Custom scrollbar for better look */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
+
         .panel-card {
             background-color: white;
             border-radius: 0.5rem;
@@ -28,19 +27,19 @@
     <header class="bg-slate-900 text-white p-4 shadow-md">
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <h1 class="text-2xl font-bold tracking-tight">Simulador de Control PID Lazo Cerrado</h1>
-            <div class="text-sm bg-slate-800 px-3 py-1 rounded-full text-slate-300">
-                dt = 0.02s
+            <div class="flex items-center gap-2 text-sm">
+                <span id="connBadge" class="px-3 py-1 rounded-full bg-red-900 text-red-200">Desconectado</span>
+                <span class="bg-slate-800 px-3 py-1 rounded-full text-slate-300">dt = 0.02 s</span>
             </div>
         </div>
     </header>
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
-        
-        <!-- Left Column: Chart and Variables (Takes up 2 cols on large screens) -->
+
+        <!-- Left Column: Chart and Variables -->
         <div class="lg:col-span-2 flex flex-col gap-6">
-            
-            <!-- Chart Panel -->
+
             <div class="panel-card flex-grow flex flex-col relative h-[450px]">
                 <h2 class="text-lg font-semibold mb-2 border-b pb-2">Visualización en Tiempo Real</h2>
                 <div class="flex-grow relative w-full h-full">
@@ -48,32 +47,32 @@
                 </div>
             </div>
 
-            <!-- Real-time Variables State -->
             <div class="panel-card">
                 <h2 class="text-lg font-semibold mb-4 border-b pb-2">Estado de Variables</h2>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div class="bg-slate-50 p-3 rounded border text-center">
-                        <div class="text-xs text-slate-500 font-bold uppercase">Error (e)</div>
+                        <div class="text-xs text-slate-500 font-bold uppercase">Error (e) [ms]</div>
                         <div class="text-lg font-mono" id="var-e">0.000</div>
                     </div>
                     <div class="bg-slate-50 p-3 rounded border text-center">
                         <div class="text-xs text-slate-500 font-bold uppercase">Señal Control (u)</div>
                         <div class="text-lg font-mono" id="var-u">0.000</div>
                     </div>
-                    <div class="bg-slate-50 p-3 rounded border text-center">
-                        <div class="text-xs text-slate-500 font-bold uppercase">Salida Actuador (ua)</div>
+                    <div class="bg-slate-50 p-3 rounded border text-center" id="box-ua">
+                        <div class="text-xs text-slate-500 font-bold uppercase">Salida Actuador (ua) [sol]</div>
                         <div class="text-lg font-mono" id="var-ua">0.000</div>
+                        <div class="text-xs font-bold text-amber-600 h-4" id="var-sat"></div>
                     </div>
                     <div class="bg-slate-50 p-3 rounded border text-center">
-                        <div class="text-xs text-slate-500 font-bold uppercase">Entrada Planta (ue)</div>
+                        <div class="text-xs text-slate-500 font-bold uppercase">Entrada Planta (ue) [sol]</div>
                         <div class="text-lg font-mono" id="var-ue">0.000</div>
                     </div>
                     <div class="bg-indigo-50 p-3 rounded border border-indigo-100 text-center">
-                        <div class="text-xs text-indigo-500 font-bold uppercase">Salida Real (θo)</div>
+                        <div class="text-xs text-indigo-500 font-bold uppercase">Salida Real (θo) [ms]</div>
                         <div class="text-lg font-mono text-indigo-700 font-semibold" id="var-theta">0.000</div>
                     </div>
                     <div class="bg-red-50 p-3 rounded border border-red-100 text-center">
-                        <div class="text-xs text-red-500 font-bold uppercase">Perturbación (d)</div>
+                        <div class="text-xs text-red-500 font-bold uppercase">Perturbación (d) [sol]</div>
                         <div class="text-lg font-mono text-red-600" id="var-d">0.000</div>
                     </div>
                 </div>
@@ -82,8 +81,7 @@
 
         <!-- Right Column: Controls and Parameters -->
         <div class="flex flex-col gap-4">
-            
-            <!-- Execution Controls -->
+
             <div class="panel-card bg-slate-800 text-white">
                 <h2 class="text-lg font-semibold mb-4 text-slate-200">Control de Ejecución</h2>
                 <div class="flex gap-2">
@@ -94,17 +92,17 @@
                         Reiniciar
                     </button>
                 </div>
+                <p id="errorMsg" class="text-xs text-red-300 mt-3 hidden"></p>
             </div>
 
-            <!-- Entradas del Sistema -->
             <div class="panel-card border-t-4 border-blue-500">
                 <h2 class="text-lg font-semibold mb-4 border-b pb-2">Entradas al Sistema</h2>
-                
+
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Referencia (Setpoint)</label>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Referencia / Setpoint de latencia [ms]</label>
                     <div class="flex items-center gap-2">
-                        <input type="range" id="param-ref" min="-50" max="50" step="1" value="10" class="flex-grow accent-blue-600" oninput="updateInputValue('ref')" onchange="applyParams()">
-                        <input type="number" id="num-ref" value="10" class="w-20 border-slate-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-1" onchange="updateSliderValue('ref'); applyParams()">
+                        <input type="range" id="param-ref" min="0" max="100" step="1" value="10" class="flex-grow accent-blue-600" oninput="updateInputValue('ref')" onchange="sendParams()">
+                        <input type="number" id="num-ref" value="10" min="0" class="w-20 border-slate-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-1" onchange="updateSliderValue('ref'); sendParams()">
                     </div>
                 </div>
 
@@ -116,262 +114,260 @@
                             <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
                         </label>
                     </div>
-                    <label class="block text-xs font-medium text-red-600 mb-1">Valor de Perturbación (Pulso)</label>
-                    <input type="number" id="param-distVal" value="5" step="0.5" class="w-full border-red-300 rounded-md shadow-sm focus:border-red-500 focus:ring-red-500 border p-1 bg-white text-sm" onchange="applyParams()">
+                    <label class="block text-xs font-medium text-red-600 mb-1">Valor de Perturbación (escalón) [sol]</label>
+                    <input type="number" id="param-distVal" value="5" step="0.5" class="w-full border-red-300 rounded-md shadow-sm focus:border-red-500 focus:ring-red-500 border p-1 bg-white text-sm" onchange="sendParams()">
                 </div>
             </div>
 
-            <!-- Parámetros Controlador -->
             <div class="panel-card border-t-4 border-indigo-500">
                 <h2 class="text-lg font-semibold mb-4 border-b pb-2">Controlador (PID)</h2>
                 <div class="grid grid-cols-3 gap-2">
                     <div>
                         <label class="block text-xs font-medium text-slate-700 mb-1">Kp (Proporcional)</label>
-                        <input type="number" id="param-Kp" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="applyParams()">
+                        <input type="number" id="param-Kp" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="sendParams()">
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-slate-700 mb-1">Ki (Integral)</label>
-                        <input type="number" id="param-Ki" value="0.5" step="0.01" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="applyParams()">
+                        <input type="number" id="param-Ki" value="0.5" step="0.01" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="sendParams()">
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-slate-700 mb-1">Kd (Derivativo)</label>
-                        <input type="number" id="param-Kd" value="0.01" step="0.01" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="applyParams()">
+                        <input type="number" id="param-Kd" value="0.01" step="0.01" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="sendParams()">
                     </div>
                 </div>
             </div>
 
-            <!-- Parámetros Planta y Actuador -->
             <div class="panel-card border-t-4 border-green-500">
                 <h2 class="text-lg font-semibold mb-4 border-b pb-2">Planta & Actuador</h2>
-                <div class="grid grid-cols-1 gap-4 mb-3">
+                <div class="grid grid-cols-2 gap-4 mb-3">
                     <div>
                         <label class="block text-xs font-medium text-slate-700 mb-1">Ganancia Actuador (Ka)</label>
-                        <input type="number" id="param-Ka" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="applyParams()">
+                        <input type="number" id="param-Ka" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="sendParams()">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Límite máx. actuador [sol]</label>
+                        <input type="number" id="param-uaMax" value="100" step="10" min="1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="sendParams()">
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div class="bg-slate-50 p-2 rounded border">
-                        <label class="block text-xs font-medium text-slate-700 mb-1">Ganancia Planta (Kpl)</label>
-                        <input type="number" id="param-Kpl" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="applyParams()">
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Ganancia Planta (Kpl) [ms/sol]</label>
+                        <input type="number" id="param-Kpl" value="1.0" step="0.1" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="sendParams()">
                     </div>
                     <div class="bg-slate-50 p-2 rounded border">
-                        <label class="block text-xs font-medium text-slate-700 mb-1">Const. Tiempo (T)</label>
-                        <input type="number" id="param-T" value="1.0" step="0.1" min="0.001" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="applyParams()">
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Const. Tiempo (T) [s]</label>
+                        <input type="number" id="param-T" value="1.0" step="0.1" min="0.001" class="w-full border-slate-300 rounded-md shadow-sm border p-1 text-sm" onchange="sendParams()">
                     </div>
                 </div>
+                <p class="text-xs text-slate-500 mt-2">Cambiar Kpl o T reinicia la simulación.</p>
             </div>
 
         </div>
     </main>
 
     <script>
-        // La interfaz permanece en el navegador; los cálculos PID y de planta
-        // se ejecutan en Python (backend Flask). Los parámetros se envían una
-        // sola vez con PATCH /post/params; cada paso solo avanza el estado.
-        let isRunning = false;
-        let simInterval = null;
-        const dt = 0.02;
-        const maxDataPoints = 150;
+        // La simulación corre de forma continua en el backend (Python). El
+        // navegador solo abre un WebSocket, recibe las muestras nuevas y las
+        // dibuja; también envía comandos (play/pausa, parámetros, perturbación).
+        const WINDOW_S = 10;            // ventana visible del gráfico [s]
+        let ws = null;
+        let retry = 0;
+        let running = false;
         let chartInstance = null;
+        let renderPending = false;
 
-        async function apiFetch(url, options = {}) {
-            const response = await fetch(url, options);
-            if (!response.ok) {
-                throw new Error(`Error del servidor Python (HTTP ${response.status})`);
-            }
-            return response;
+        // ---------------------------------------------------------- WebSocket
+        function connect() {
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            ws = new WebSocket(`${proto}://${location.host}/ws`);
+            ws.onopen = () => { retry = 0; setConnected(true); };
+            ws.onclose = () => {
+                setConnected(false);
+                setTimeout(connect, Math.min(1000 * 2 ** retry++, 5000));
+            };
+            ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
         }
 
+        function send(obj) {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+        }
+
+        function setConnected(ok) {
+            const b = document.getElementById('connBadge');
+            b.textContent = ok ? 'Conectado' : 'Desconectado';
+            b.className = 'px-3 py-1 rounded-full ' +
+                (ok ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200');
+        }
+
+        function showError(text) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = text || '';
+            el.classList.toggle('hidden', !text);
+        }
+
+        function handleMessage(msg) {
+            if (msg.type === 'samples') {
+                appendSamples(msg.data);
+            } else if (msg.type === 'state') {
+                showError('');
+                applyParamsToForm(msg.params);
+                document.getElementById('param-distToggle').checked = msg.dist_on;
+                setRunning(msg.running);
+                if (msg.history) replaceChart(msg.history);
+            } else if (msg.type === 'error') {
+                showError(msg.message);
+            }
+        }
+
+        // -------------------------------------------------------------- Gráfico
         function initChart() {
             const ctx = document.getElementById('simulationChart').getContext('2d');
             chartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: [],
                     datasets: [
-                        {
-                            label: 'Referencia', data: [], borderColor: '#3b82f6',
-                            borderWidth: 2, borderDash: [5, 5], pointRadius: 0, tension: 0.1
-                        },
-                        {
-                            label: 'Salida (θo)', data: [], borderColor: '#10b981',
-                            borderWidth: 3, pointRadius: 0, tension: 0.1
-                        },
-                        {
-                            label: 'Perturbación (d)', data: [], borderColor: '#ef4444',
-                            borderWidth: 1.5, pointRadius: 0, tension: 0.1
-                        }
+                        { label: 'Referencia [ms]', data: [], yAxisID: 'y', borderColor: '#3b82f6',
+                          borderWidth: 2, borderDash: [5, 5], pointRadius: 0 },
+                        { label: 'Salida θo [ms]', data: [], yAxisID: 'y', borderColor: '#10b981',
+                          borderWidth: 3, pointRadius: 0 },
+                        { label: 'Límite ua [sol]', data: [], yAxisID: 'y2', borderColor: '#8b5cf6',
+                          borderWidth: 1.5, pointRadius: 0 },
+                        { label: 'Perturbación d [sol]', data: [], yAxisID: 'y2', borderColor: '#ef4444',
+                          borderWidth: 1.5, pointRadius: 0 }
                     ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false, animation: false,
-                    interaction: { intersect: false, mode: 'index' },
+                    parsing: false, normalized: true,
+                    interaction: { intersect: false, mode: 'nearest', axis: 'x' },
                     scales: {
                         x: {
+                            type: 'linear', min: 0, max: WINDOW_S,
                             title: { display: true, text: 'Tiempo (s)' },
                             grid: { color: '#f1f5f9' },
-                            ticks: { maxTicksLimit: 10, callback: function(value) {
-                                return Number(this.getLabelForValue(value)).toFixed(1);
-                            }}
+                            ticks: { maxTicksLimit: 10 }
                         },
-                        y: { title: { display: true, text: 'Magnitud' }, grid: { color: '#f1f5f9' } }
+                        // Ejes siempre desde 0 y con 10 % de aire arriba: así la escala no se
+                        // "achica" a décimas cuando la salida se estabiliza en la referencia.
+                        y:  { position: 'left',  beginAtZero: true, grace: '10%',
+                              title: { display: true, text: 'Latencia [ms]' }, grid: { color: '#f1f5f9' } },
+                        y2: { position: 'right', beginAtZero: true, grace: '10%',
+                              title: { display: true, text: 'Solicitudes [sol]' }, grid: { drawOnChartArea: false } }
                     },
                     plugins: { legend: { position: 'top' } }
                 }
             });
         }
 
+        function scheduleRender() {
+            if (renderPending) return;
+            renderPending = true;
+            requestAnimationFrame(() => {
+                renderPending = false;
+                const ds = chartInstance.data.datasets;
+                const last = ds[0].data.length ? ds[0].data[ds[0].data.length - 1].x : 0;
+                const xmax = Math.max(last, WINDOW_S);
+                chartInstance.options.scales.x.min = xmax - WINDOW_S;
+                chartInstance.options.scales.x.max = xmax;
+                chartInstance.update('none');
+            });
+        }
+
+        function pushPoint(s) {
+            const ds = chartInstance.data.datasets;
+            ds[0].data.push({ x: s.time, y: s.ref });
+            ds[1].data.push({ x: s.time, y: s.theta });
+            ds[2].data.push({ x: s.time, y: s.ua });
+            ds[3].data.push({ x: s.time, y: s.d });
+        }
+
+        function trimOld(tEnd) {
+            const cutoff = tEnd - WINDOW_S - 1;
+            chartInstance.data.datasets.forEach(ds => {
+                let n = 0;
+                while (n < ds.data.length && ds.data[n].x < cutoff) n++;
+                if (n) ds.data.splice(0, n);
+            });
+        }
+
+        function appendSamples(list) {
+            if (!list.length) return;
+            list.forEach(pushPoint);
+            const last = list[list.length - 1];
+            trimOld(last.time);
+            updateVariablesUI(last);
+            scheduleRender();
+        }
+
+        function replaceChart(history) {
+            chartInstance.data.datasets.forEach(ds => ds.data = []);
+            history.forEach(pushPoint);
+            updateVariablesUI(history.length ? history[history.length - 1] : null);
+            scheduleRender();
+        }
+
+        function updateVariablesUI(s) {
+            const f = (id, v) => document.getElementById(id).innerText = Number(v).toFixed(3);
+            f('var-e', s ? s.e : 0);
+            f('var-u', s ? s.u : 0);
+            f('var-ua', s ? s.ua : 0);
+            f('var-ue', s ? s.ue : 0);
+            f('var-theta', s ? s.theta : 0);
+            f('var-d', s ? s.d : 0);
+            document.getElementById('var-sat').innerText = s && s.sat ? 'SATURADO' : '';
+        }
+
+        // ------------------------------------------------------------ Formulario
         function updateInputValue(id) {
-            document.getElementById('num-' + id).value =
-                document.getElementById('param-' + id).value;
+            document.getElementById('num-' + id).value = document.getElementById('param-' + id).value;
         }
 
         function updateSliderValue(id) {
-            document.getElementById('param-' + id).value =
-                document.getElementById('num-' + id).value;
+            document.getElementById('param-' + id).value = document.getElementById('num-' + id).value;
         }
 
         function getParams() {
+            const n = (id) => parseFloat(document.getElementById(id).value);
             return {
-                ref: parseFloat(document.getElementById('param-ref').value),
-                Kp: parseFloat(document.getElementById('param-Kp').value),
-                Ki: parseFloat(document.getElementById('param-Ki').value),
-                Kd: parseFloat(document.getElementById('param-Kd').value),
-                Ka: parseFloat(document.getElementById('param-Ka').value),
-                Kpl: parseFloat(document.getElementById('param-Kpl').value),
-                T: Math.max(parseFloat(document.getElementById('param-T').value), 0.001),
-                dist: parseFloat(document.getElementById('param-distVal').value)
+                ref: n('param-ref'), Kp: n('param-Kp'), Ki: n('param-Ki'), Kd: n('param-Kd'),
+                Ka: n('param-Ka'), Kpl: n('param-Kpl'), T: n('param-T'),
+                dist: n('param-distVal'), ua_max: n('param-uaMax')
             };
         }
 
-        function clearChart() {
-            chartInstance.data.labels = [];
-            chartInstance.data.datasets.forEach(ds => ds.data = []);
-            chartInstance.update();
-            updateVariablesUI(0, 0, 0, 0, 0, 0);
+        function applyParamsToForm(p) {
+            const set = (id, v) => document.getElementById(id).value = v;
+            set('param-ref', p.ref); set('num-ref', p.ref);
+            set('param-Kp', p.Kp); set('param-Ki', p.Ki); set('param-Kd', p.Kd);
+            set('param-Ka', p.Ka); set('param-Kpl', p.Kpl); set('param-T', p.T);
+            set('param-distVal', p.dist); set('param-uaMax', p.ua_max);
         }
 
-        // Envía todos los parámetros al backend. El backend reinicia la
-        // simulación al aplicarlos, por eso se limpia la gráfica.
-        async function applyParams() {
-            const wasRunning = isRunning;
-            pauseSimulation();
-            try {
-                await apiFetch('/post/params', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(getParams())
-                });
-                // Params.default()/reset dejan la perturbación apagada.
-                // Si el usuario la tenía activa, volvemos a encenderla.
-                if (document.getElementById('param-distToggle').checked) {
-                    await apiFetch('/post/dist', { method: 'POST' });
-                }
-                clearChart();
-                if (wasRunning) toggleSimulation();
-            } catch (error) {
-                console.error(error);
-                alert('No se pudieron aplicar los parámetros al simulador Python.');
-            }
+        function sendParams() {
+            send({ type: 'params', params: getParams() });
         }
 
-        async function toggleDisturbance() {
-            const toggle = document.getElementById('param-distToggle');
-            try {
-                await apiFetch('/post/dist', { method: 'POST' });
-            } catch (error) {
-                console.error(error);
-                toggle.checked = !toggle.checked;
-                alert('No se pudo cambiar la perturbación en el simulador Python.');
-            }
+        function toggleDisturbance() {
+            send({ type: 'dist', on: document.getElementById('param-distToggle').checked });
         }
 
-        async function simulateStep() {
-            if (!isRunning) return;
-            try {
-                const response = await apiFetch('/post/step', { method: 'POST' });
-                const v = await response.json();
-
-                updateVariablesUI(v.e, v.u, v.ua, v.ue, v.theta, v.d);
-                chartInstance.data.labels.push(v.time);
-                chartInstance.data.datasets[0].data.push(v.ref);
-                chartInstance.data.datasets[1].data.push(v.theta);
-                chartInstance.data.datasets[2].data.push(v.d);
-
-                if (chartInstance.data.labels.length > maxDataPoints) {
-                    chartInstance.data.labels.shift();
-                    chartInstance.data.datasets.forEach(ds => ds.data.shift());
-                }
-                chartInstance.update('none');
-            } catch (error) {
-                console.error(error);
-                pauseSimulation();
-                alert('No se pudo conectar con el simulador Python. Verificá que app.py esté ejecutándose.');
-            }
-        }
-
-        function updateVariablesUI(e, u, ua, ue, theta, d) {
-            document.getElementById('var-e').innerText = Number(e).toFixed(3);
-            document.getElementById('var-u').innerText = Number(u).toFixed(3);
-            document.getElementById('var-ua').innerText = Number(ua).toFixed(3);
-            document.getElementById('var-ue').innerText = Number(ue).toFixed(3);
-            document.getElementById('var-theta').innerText = Number(theta).toFixed(3);
-            document.getElementById('var-d').innerText = Number(d).toFixed(3);
-        }
-
-        async function simulationLoop() {
-            if (!isRunning) return;
-            await simulateStep();
-            if (isRunning) simInterval = setTimeout(simulationLoop, dt * 1000);
-        }
-
-        function pauseSimulation() {
-            isRunning = false;
-            if (simInterval) {
-                clearTimeout(simInterval);
-                simInterval = null;
-            }
+        function setRunning(on) {
+            running = on;
             const btn = document.getElementById('btnPlayPause');
-            btn.innerText = 'Play';
-            btn.classList.remove('bg-yellow-500', 'hover:bg-yellow-400');
-            btn.classList.add('bg-green-600', 'hover:bg-green-500');
+            btn.innerText = on ? 'Pausa' : 'Play';
+            btn.classList.toggle('bg-yellow-500', on);
+            btn.classList.toggle('hover:bg-yellow-400', on);
+            btn.classList.toggle('bg-green-600', !on);
+            btn.classList.toggle('hover:bg-green-500', !on);
         }
 
-        function toggleSimulation() {
-            const btn = document.getElementById('btnPlayPause');
-            if (isRunning) {
-                pauseSimulation();
-            } else {
-                isRunning = true;
-                btn.innerText = 'Pausa';
-                btn.classList.remove('bg-green-600', 'hover:bg-green-500');
-                btn.classList.add('bg-yellow-500', 'hover:bg-yellow-400');
-                simulationLoop();
-            }
-        }
-
-        async function resetSimulation() {
-            pauseSimulation();
-            try {
-                await apiFetch('/post/reset', { method: 'POST' });
-                // El backend reinicia con la perturbación apagada.
-                document.getElementById('param-distToggle').checked = false;
-                clearChart();
-            } catch (error) {
-                console.error(error);
-                alert('No se pudo reiniciar el simulador Python.');
-            }
-        }
+        function toggleSimulation() { send({ type: 'run', on: !running }); }
+        function resetSimulation()  { send({ type: 'reset' }); }
 
         window.onload = () => {
             initChart();
-            updateVariablesUI(0, 0, 0, 0, 0, 0);
-            // Sincroniza el backend con los valores iniciales del formulario.
-            apiFetch('/post/params', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(getParams())
-            }).catch(error => console.error(error));
+            updateVariablesUI(null);
+            connect();
         };
     </script>
 </body>
